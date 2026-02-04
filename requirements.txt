@@ -6,6 +6,8 @@ torch>=1.7.0
 torchvision>=0.8.1
 tqdm>=4.41.0
 torchsummary
+flask>=2.0.0
+flask-cors>=4.0.0
 
 numpy
 wandb
