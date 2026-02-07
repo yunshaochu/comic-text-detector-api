@@ -15,6 +15,8 @@ import json
 from inference import TextDetector
 import base64
 from utils.io_utils import NumpyEncoder
+import urllib.request
+import hashlib
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})  # 允许所有来源的跨域请求
@@ -35,6 +37,8 @@ PROJECT_ROOT = Path(__file__).parent
 
 model_config = {
     'model_path': str(PROJECT_ROOT / 'data' / 'comictextdetector.pt'),
+    'model_url': 'https://github.com/zyddnys/manga-image-translator/releases/download/beta-0.2.1/comictextdetector.pt',
+    'model_md5': '5d0c4a7e1e7b8f5c6e8a2b3c4d5e6f7a',  # 需要根据实际下载的文件更新
     'input_size': 1024,
     'device': 'cuda' if torch.cuda.is_available() else 'cpu',
     'half': False,
@@ -42,6 +46,72 @@ model_config = {
     'nms_thresh': 0.35,
     'mask_thresh': 0.3
 }
+
+
+def download_model(url, dest_path):
+    """下载模型文件并显示进度条"""
+    def report_progress(block_num, block_size, total_size):
+        downloaded = block_num * block_size
+        percent = downloaded / total_size * 100 if total_size > 0 else 0
+        downloaded_mb = downloaded / (1024 * 1024)
+        total_mb = total_size / (1024 * 1024) if total_size > 0 else 0
+        print(f'\rDownloading: {downloaded_mb:.1f}MB / {total_mb:.1f}MB ({percent:.1f}%)', end='', flush=True)
+
+    print(f'Downloading model from {url}...')
+    try:
+        urllib.request.urlretrieve(url, dest_path, reporthook=report_progress)
+        print('\nDownload completed!')
+        return True
+    except Exception as e:
+        print(f'\nDownload failed: {e}')
+        return False
+
+
+def verify_model_md5(file_path, expected_md5):
+    """验证模型文件的MD5哈希"""
+    if not expected_md5:
+        return True  # 如果没有提供MD5，跳过验证
+    md5_hash = hashlib.md5()
+    try:
+        with open(file_path, 'rb') as f:
+            for chunk in iter(lambda: f.read(4096), b''):
+                md5_hash.update(chunk)
+        calculated_md5 = md5_hash.hexdigest()
+        return calculated_md5.lower() == expected_md5.lower()
+    except:
+        return False
+
+
+def ensure_model_exists():
+    """确保模型文件存在，如果不存在则自动下载"""
+    model_path = Path(model_config['model_path'])
+
+    if model_path.exists():
+        print(f'Model file found at {model_path}')
+        return True
+
+    # 确保data目录存在
+    model_path.parent.mkdir(parents=True, exist_ok=True)
+
+    print(f'Model file not found at {model_path}')
+    print('Starting automatic download...')
+
+    if download_model(model_config['model_url'], model_path):
+        if model_config.get('model_md5'):
+            if verify_model_md5(model_path, model_config['model_md5']):
+                print('Model MD5 verification passed!')
+                return True
+            else:
+                print('Warning: MD5 verification failed, but proceeding anyway.')
+                return True
+        return True
+    else:
+        raise FileNotFoundError(
+            f'Failed to download model. Please download manually from:\n'
+            f'  {model_config["model_url"]}\n'
+            f'  Or Google Drive: https://drive.google.com/drive/folders/1cTsXP5NYTCjhPVxwScdhxqJleHuIOyXG\n'
+            f'And place it at: {model_path}'
+        )
 
 
 def allowed_file(filename):
@@ -53,6 +123,9 @@ def init_model():
     """初始化文本检测模型"""
     global model
     if model is None:
+        # 确保模型文件存在
+        ensure_model_exists()
+
         print(f"Loading model from {model_config['model_path']} on device {model_config['device']}...")
         model = TextDetector(
             model_path=model_config['model_path'],

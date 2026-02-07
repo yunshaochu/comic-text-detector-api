@@ -12,3 +12,4 @@ flask-cors>=4.0.0
 numpy
 wandb
 trdg
+pyclipper
